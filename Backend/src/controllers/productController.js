@@ -16,7 +16,7 @@ export const getProducts = async (req,res) => {
 // get product by id
 export const getProductById = async (req,res) => {
     try {
-        const {id} = req.params();
+        const {id} = req.params;
         
         // if id valid or not 
         if(!mongoose.Types.ObjectId.isValid(id)){
