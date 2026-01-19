@@ -9,8 +9,23 @@ export const createProduct = async (req,res) => {
 
 // get all products (for homepage  i think)
 export const getProducts = async (req,res) => {
-    const products = await Product.find();
-    res.json(products);
+    try {
+        const {category} = req.query;
+
+        const filter = {};
+         if(category) {
+            filter.category = category;
+         }
+        const products = await Product.find(filter);
+        res.json(products);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            message:"Server error"
+        })
+        
+    }
+    
 }
 
 // get product by id
