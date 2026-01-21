@@ -10,11 +10,19 @@ export const createProduct = async (req,res) => {
 // get all products (for homepage  i think)
 export const getProducts = async (req,res) => {
     try {
-        const {category} = req.query;
+        const {category,search, minPrice, maxPrice} = req.query;
 
         const filter = {};
          if(category) {
             filter.category = category;
+         }
+         if (search) {
+           filter.name = { $regex: search, $options: "i" };
+         }
+         if(minPrice || maxPrice) {
+            filter.price={};
+            if (minPrice) filter.price.$gte = Number(minPrice);
+            if (maxPrice) filter.price.$lte = Number(maxPrice);
          }
         const products = await Product.find(filter);
         res.json(products);
