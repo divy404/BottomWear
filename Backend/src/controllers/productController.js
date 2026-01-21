@@ -10,22 +10,49 @@ export const createProduct = async (req,res) => {
 // get all products (for homepage  i think)
 export const getProducts = async (req,res) => {
     try {
-        const {category,search, minPrice, maxPrice} = req.query;
-
+        const {category,search, minPrice, maxPrice, minRating, page=1, limit=10,sort} = req.query;
+        
+        //category filter
         const filter = {};
          if(category) {
             filter.category = category;
-         }
+        }
+
+        // search filter
          if (search) {
            filter.name = { $regex: search, $options: "i" };
          }
+
+         // price filter
          if(minPrice || maxPrice) {
             filter.price={};
             if (minPrice) filter.price.$gte = Number(minPrice);
             if (maxPrice) filter.price.$lte = Number(maxPrice);
          }
-        const products = await Product.find(filter);
-        res.json(products);
+
+        //  rating filter 
+        if(minRating) {
+            filter.averageRating = {$gte: Number(minRating)};
+        }
+        //  pagination
+         const skip = (Number(page)-1)*Number(limit);
+
+        // sorting logic 
+        let sortOption = {};
+          if (sort === "price_asc") sortOption.price = 1;
+          if (sort === "price_desc") sortOption.price = -1;
+          if (sort === "newest") sortOption.createdAt = -1;
+          if (sort === "rating") sortOption.averageRating = -1;
+
+        const products = await Product.find(filter).sort(sortOption).skip(skip).limit(Number(limit));
+
+        const total = await Product.countDocuments(filter);
+        res.json({
+            total,
+            page: Number(page),
+            limit: Number(limit),
+            products
+    });
     } catch (error) {
         console.error(error);
         res.status(500).json({
