@@ -1,4 +1,4 @@
-import e from "express";
+import express from "express";
 import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 
@@ -153,6 +153,49 @@ export const updateCartItem = async (req,res) => {
     console.error(error);
     res.status(500).json({
       message: "Server error",
+    });
+    
+  }
+}
+
+export const removeFromCart = async (req,res) => {
+  try {
+    const userId = req.user.id;
+    const {productId} = req.params;
+
+    const cart = await Cart.findOne({user:userId});
+
+    if(!cart){
+      return res.status(404).json({
+        message:"Cart not found"
+      })
+    }
+
+    const initialLength = cart.items.length;
+
+    cart.items = cart.items.filter(
+      item => item.product.toString() !== productId
+    );
+    
+    if(cart.items.length === initialLength) {
+      return res.status(404).json({
+        message:"Product not in cart"
+      })
+    }
+
+    //recalculate total price 
+    cart.totalPrice = cart.items.reduce(
+      (sum,item) => sum + item.price * item.quantity,
+      0
+    )
+
+    await cart.save();
+
+    res.json(cart);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message:"Server error"
     });
     
   }
