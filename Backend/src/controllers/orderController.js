@@ -1,7 +1,8 @@
 import mongoose from "mongoose";
 import Cart from "../models/Cart.js";
 import Order from "../models/Order.js";
-import { response } from "express";
+import { sendEmail } from "../utils/sendEmail.js";
+import User from "../models/User.js";
 
 export const placeOrder = async (req, res) => {
   try {
@@ -16,6 +17,8 @@ export const placeOrder = async (req, res) => {
       });
     }
 
+    await cart.populate("items.product");
+
     const orderItems = cart.items.map((item) => ({
       product: item.product,
       quantity: item.quantity,
@@ -29,6 +32,35 @@ export const placeOrder = async (req, res) => {
       paymentMethod: paymentMethod || "COD",
       paymentStatus: paymentMethod === "ONLINE" ? "PAID" : "PENDING",
     });
+
+    const user = await User.findById(userId);
+
+    const itemsText = cart.items
+      .map(
+        (item) =>
+          `${item.product.name} (x${item.quantity}) - ₹${item.price * item.quantity}`,
+      )
+      .join("\n");
+
+    const emailText = `
+Hi ${user.name},
+
+Your order has been placed successfully!
+
+Order ID: ${order._id}
+
+Items:
+${itemsText}
+
+Total Amount: ₹${order.totalAmount}
+Payment Method: ${order.paymentMethod}
+Status: ${order.orderStatus}
+
+Thank you for shopping with us.
+    `;
+
+    // Send confirmation email
+    await sendEmail(user.email, "Order Confirmation - BottomWear", emailText);
 
     //clear cart after order
     cart.items = [];
