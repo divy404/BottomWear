@@ -19,8 +19,26 @@ export const placeOrder = async (req, res) => {
 
     await cart.populate("items.product");
 
+    for (const item of cart.items) {
+      const product = item.product;
+
+      const sizeObj = product.sizes.find((s) => s.size === item.size);
+
+      if (!sizeObj) {
+        return res.status(400).json({
+          message: `Size ${item.size} not available for ${product.name}`,
+        });
+      }
+
+      if (sizeObj.stock < item.quantity) {
+        return res.status(400).json({
+          message: `Insufficient stock for ${product.name} (${item.size})`,
+        });
+      }
+    }
+
     const orderItems = cart.items.map((item) => ({
-      product: item.product,
+      product: item.product._id,
       quantity: item.quantity,
       price: item.price,
     }));
@@ -33,12 +51,24 @@ export const placeOrder = async (req, res) => {
       paymentStatus: paymentMethod === "ONLINE" ? "PAID" : "PENDING",
     });
 
+    for (const item of cart.items) {
+      const product = item.product;
+
+      const sizeObj = product.sizes.find((s) => s.size === item.size);
+
+      sizeObj.stock -= item.quantity;
+
+      await product.save();
+    }
+
     const user = await User.findById(userId);
 
     const itemsText = cart.items
       .map(
         (item) =>
-          `${item.product.name} (x${item.quantity}) - ₹${item.price * item.quantity}`,
+          `${item.product.name} (${item.size}) x${item.quantity} - ₹${
+            item.price * item.quantity
+          }`,
       )
       .join("\n");
 
@@ -59,10 +89,8 @@ Status: ${order.orderStatus}
 Thank you for shopping with us.
     `;
 
-    // Send confirmation email
     await sendEmail(user.email, "Order Confirmation - BottomWear", emailText);
 
-    //clear cart after order
     cart.items = [];
     cart.totalPrice = 0;
     await cart.save();

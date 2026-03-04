@@ -1,39 +1,44 @@
-
 import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
-
-
 
 export const addToCart = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { productId, quantity } = req.body;
+    const { productId, size, quantity } = req.body;
 
-    const qty = Number(quantity);
-
-    if (!productId || !qty) {
+    if (!productId || !size || !quantity) {
       return res.status(400).json({
-        message: "ProductId and quantity are required",
-      });
-    }
-
-    if (qty < 1) {
-      return res.status(400).json({
-        message: "Quantity must be at least 1",
+        message: "ProductId, size and quantity are required",
       });
     }
 
     const product = await Product.findById(productId);
+
     if (!product) {
       return res.status(404).json({
         message: "Product not found",
       });
     }
 
+    // check if size exists in product
+    const sizeObj = product.sizes.find((s) => s.size === size);
+
+    if (!sizeObj) {
+      return res.status(400).json({
+        message: "Invalid size selected",
+      });
+    }
+
+    if (sizeObj.stock < quantity) {
+      return res.status(400).json({
+        message: "Insufficient stock",
+      });
+    }
+
     let cart = await Cart.findOne({ user: userId });
 
     if (!cart) {
-      cart = new Cart({
+      cart = await Cart.create({
         user: userId,
         items: [],
         totalPrice: 0,
@@ -41,15 +46,16 @@ export const addToCart = async (req, res) => {
     }
 
     const itemIndex = cart.items.findIndex(
-      (item) => item.product.toString() === productId,
+      (item) => item.product.toString() === productId && item.size === size,
     );
 
     if (itemIndex > -1) {
-      cart.items[itemIndex].quantity += qty;
+      cart.items[itemIndex].quantity += quantity;
     } else {
       cart.items.push({
         product: productId,
-        quantity: qty,
+        size,
+        quantity,
         price: product.price,
       });
     }
@@ -61,7 +67,7 @@ export const addToCart = async (req, res) => {
 
     await cart.save();
 
-    res.status(200).json(cart);
+    res.json(cart);
   } catch (error) {
     console.error(error);
     res.status(500).json({
