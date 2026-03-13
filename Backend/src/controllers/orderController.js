@@ -5,52 +5,54 @@ import { sendEmail } from "../utils/sendEmail.js";
 import User from "../models/User.js";
 
 export const placeOrder = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const userId = req.user.id;
     const { paymentMethod } = req.body;
 
-    const cart = await Cart.findOne({ user: userId });
+    const cart = await Cart.findOne({ user: userId })
+      .populate("items.product")
+      .session(session);
 
     if (!cart || cart.items.length === 0) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         message: "Cart is empty",
       });
     }
-
-    await cart.populate("items.product");
 
     for (const item of cart.items) {
       const product = item.product;
 
       const sizeObj = product.sizes.find((s) => s.size === item.size);
 
-      if (!sizeObj) {
-        return res.status(400).json({
-          message: `Size ${item.size} not available for ${product.name}`,
-        });
-      }
-
-      if (sizeObj.stock < item.quantity) {
+      if (!sizeObj || sizeObj.stock < item.quantity) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(400).json({
           message: `Insufficient stock for ${product.name} (${item.size})`,
         });
       }
     }
-
-    const orderItems = cart.items.map((item) => ({
-      product: item.product._id,
-      quantity: item.quantity,
-      price: item.price,
-    }));
-
-    const order = await Order.create({
-      user: userId,
-      items: orderItems,
-      totalAmount: cart.totalPrice,
-      paymentMethod: paymentMethod || "COD",
-      paymentStatus: paymentMethod === "ONLINE" ? "PAID" : "PENDING",
-    });
-
+    const order = await Order.create(
+      [
+        {
+          user: userId,
+          items: cart.items.map((item) => ({
+            product: item.product._id,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+          totalAmount: cart.totalPrice,
+          paymentMethod: paymentMethod || "COD",
+          paymentStatus: paymentMethod === "ONLINE" ? "PAID" : "PENDING",
+        },
+      ],
+      { session },
+    );
     for (const item of cart.items) {
       const product = item.product;
 
@@ -58,18 +60,20 @@ export const placeOrder = async (req, res) => {
 
       sizeObj.stock -= item.quantity;
 
-      await product.save();
+      await product.save({ session });
     }
+
+    cart.items = [];
+    cart.totalPrice = 0;
+    await cart.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
 
     const user = await User.findById(userId);
 
-    const itemsText = cart.items
-      .map(
-        (item) =>
-          `${item.product.name} (${item.size}) x${item.quantity} - ₹${
-            item.price * item.quantity
-          }`,
-      )
+    const itemsText = order[0].items
+      .map((item) => `${item.quantity} item(s)`)
       .join("\n");
 
     const emailText = `
@@ -77,26 +81,20 @@ Hi ${user.name},
 
 Your order has been placed successfully!
 
-Order ID: ${order._id}
+Order ID: ${order[0]._id}
 
-Items:
-${itemsText}
-
-Total Amount: ₹${order.totalAmount}
-Payment Method: ${order.paymentMethod}
-Status: ${order.orderStatus}
+Total Amount: ₹${order[0].totalAmount}
 
 Thank you for shopping with us.
-    `;
+`;
 
     await sendEmail(user.email, "Order Confirmation - BottomWear", emailText);
 
-    cart.items = [];
-    cart.totalPrice = 0;
-    await cart.save();
-
-    res.status(201).json(order);
+    res.status(201).json(order[0]);
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+
     console.error(error);
     res.status(500).json({
       message: "Server error",
