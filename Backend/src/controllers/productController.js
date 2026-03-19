@@ -2,10 +2,32 @@ import mongoose from "mongoose";
 import Product from "../models/Product.js"
 
 //admin creates products
-export const createProduct = async (req,res) => {
-    const product = await Product.create(req.body);
+export const createProduct = async (req, res) => {
+  try {
+    const { name, description, price, category, sizes, colors } = req.body;
+
+    // extract image URLs from uploaded files
+    const images = req.files.map((file) => file.path);
+
+    const product = await Product.create({
+      name,
+      description,
+      price,
+      category,
+      sizes: JSON.parse(sizes), // important (comes as string from form-data)
+      colors: JSON.parse(colors),
+      images,
+    });
+
     res.status(201).json(product);
-}
+    
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
 
 // get all products (for homepage  i think)
 export const getProducts = async (req,res) => {
